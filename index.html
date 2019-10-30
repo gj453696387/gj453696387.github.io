@@ -51,3 +51,254 @@ var _bdhmProtocol = (("https:" == document.location.protocol) ? " https://" : " 
 </div>
 </body>
 </html>
+
+
+
+<!--
+
+import com.alibaba.fastjson.JSONObject;
+import org.apache.flink.api.common.functions.FilterFunction;
+import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.functions.ReduceFunction;
+import org.apache.flink.api.common.serialization.SimpleStringSchema;
+import org.apache.flink.api.java.tuple.Tuple5;
+import org.apache.flink.streaming.api.CheckpointingMode;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.DataStreamSource;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
+import org.apache.flink.streaming.api.environment.CheckpointConfig;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
+import org.apache.flink.streaming.api.functions.co.CoMapFunction;
+import org.apache.flink.streaming.api.windowing.assigners.TumblingProcessingTimeWindows;
+import org.apache.flink.streaming.api.windowing.time.Time;
+import org.apache.flink.streaming.api.windowing.triggers.ContinuousProcessingTimeTrigger;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaProducer;
+
+import java.util.Properties;
+
+
+public class JiuZhenYuYue {
+
+    public static int apptNum = 0;
+
+
+    public static void main(String[] args) {
+        //获取Flink的运行环境
+        StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
+
+        //设置使用eventtime
+//        env.setStreamTimeCharacteristic(TimeCharacteristic.EventTime);
+
+        //checkpoint配置
+        env.enableCheckpointing(5000);
+        env.getCheckpointConfig().setCheckpointingMode(CheckpointingMode.EXACTLY_ONCE);
+        env.getCheckpointConfig().setCheckpointTimeout(60000);
+        env.getCheckpointConfig().setMinPauseBetweenCheckpoints(500);
+        env.getCheckpointConfig().setMaxConcurrentCheckpoints(1);
+        env.getCheckpointConfig().enableExternalizedCheckpoints(CheckpointConfig.ExternalizedCheckpointCleanup.RETAIN_ON_CANCELLATION);
+
+
+        //设置kafka 的基本信息 , TEST3   daytime3
+        String topic = "health_report_mz_guahao1";
+
+        Properties prop = new Properties();
+        //kafka集群地址
+        String kafka = "172.12.32.180:9092,172.12.32.181:9092,172.12.32.182:9092" ;
+        prop.setProperty("bootstrap.servers",kafka);
+
+        //zk服务器地址 , 多台用','间隔
+        String zk = "172.12.32.180:2181,172.12.32.181:2181,172.12.32.182:2181";
+        prop.setProperty("zookeeper.connect", zk);
+        //设置消费者组的id
+        prop.setProperty("group.id","flinkrt");
+        prop.setProperty("key.deserializer","org.apache.kafka.common.serialization.StringDeserializer") ;
+        prop.setProperty("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer") ;
+
+
+        FlinkKafkaConsumer<String> myConsumer = new FlinkKafkaConsumer<>(topic, new SimpleStringSchema(), prop);
+
+        //指定消费的策略
+        //默认消费策略  消費kafka正在传输的信息
+        myConsumer.setStartFromGroupOffsets();
+
+
+
+        DataStreamSource<String> stream = env.addSource(myConsumer);
+
+
+
+        //计算总人数 , I减去D即可
+        //Tuple5.of(yuanquid , -1 , zhidanren , yuyueid , guahaorq)
+        SingleOutputStreamOperator totalResult = stream.map(new MapFunction<String, Tuple5<String, Integer, String, String , String>>() {
+                    @Override
+                    public Tuple5<String, Integer, String, String , String> map(String value) throws Exception {
+                        JSONObject json = JSONObject.parseObject(value) ;
+                        return format(json) ;
+                    }
+                })
+                .windowAll(TumblingProcessingTimeWindows.of(Time.days(1) , Time.hours(-8)))
+                .trigger(ContinuousProcessingTimeTrigger.of(Time.seconds(20)))
+                .reduce(new ReduceFunction<Tuple5<String, Integer, String, String , String>>() {
+                    @Override
+                    public Tuple5<String, Integer, String, String , String> reduce(Tuple5<String, Integer, String, String , String> t1, Tuple5<String, Integer, String, String , String> t2) throws Exception {
+
+                        return Tuple5.of("YUHANG_DATA_TOTAL" , t1.f1+t2.f1 , "YUHANGQUZONGJI" , t2.f3 , t2.f4) ;
+                    }
+                })
+                .map(new MapFunction<Tuple5<String , Integer , String , String , String>, String>() {
+                    @Override
+                    public String map(Tuple5<String, Integer, String, String , String> result) throws Exception {
+
+                        return "{\"dataType\":\"ads_treatment_num\",\"medOrgCode\":\"" + result.f0 +"\",\"medOrgName\":\"" + result.f2 + "\",\"recordDate\":\"" + result.f4 + "\",\"treatmentNum\":\"" + result.f1+ "\"}";
+                    }
+                });
+
+
+
+
+        //计算预约总人数 , I减去D , 首先只取院区ID为1的 , 同时ZHIDANREN<>'DBA' , YUYUEID<>''
+        DataStream apptResult = stream.map(new MapFunction<String, Tuple5<String, Integer, String, String , String>>() {
+            @Override
+            public Tuple5<String, Integer, String, String , String> map(String value) throws Exception {
+                JSONObject json = JSONObject.parseObject(value) ;
+
+                return format(json) ;
+            }
+        })
+                .filter(new FilterFunction<Tuple5<String, Integer, String, String, String>>() {
+                    @Override
+                    public boolean filter(Tuple5<String, Integer, String, String, String> line) throws Exception {
+
+                        Boolean flag ;
+
+                        if ("DBA".equals(line.f2) ){
+                            flag = Boolean.FALSE ;
+                        }else {
+                            flag = Boolean.TRUE ;
+                        }
+
+                        return flag;
+                    }
+                })
+                .filter(line -> !line.f3.isEmpty())
+                .filter(line -> "1".equals(line.f0))
+                .windowAll(TumblingProcessingTimeWindows.of(Time.days(1) , Time.hours(-8)))
+                .trigger(ContinuousProcessingTimeTrigger.of(Time.seconds(20)))
+                .reduce(new ReduceFunction<Tuple5<String, Integer, String, String , String>>() {
+                    @Override
+                    public Tuple5<String, Integer, String, String , String> reduce(Tuple5<String, Integer, String, String , String> t1, Tuple5<String, Integer, String, String , String> t2) throws Exception {
+
+                        return Tuple5.of("YUHANG_DATA_YUYUE" , t1.f1+t2.f1 , "ZHUTIYIYUAN" , t2.f3 , t2.f4) ;
+                    }
+                }) ;
+
+
+
+
+
+
+        //计算预约总人数 , I减去D , 首先只取院区ID为1的 , ZHIDANREN<>'DBA'
+        DataStream apptTotalResult = stream.map(new MapFunction<String, Tuple5<String, Integer, String, String , String>>() {
+            @Override
+            public Tuple5<String, Integer, String, String , String> map(String value) throws Exception {
+                JSONObject json = JSONObject.parseObject(value) ;
+
+                return format(json) ;
+            }
+        })
+                .filter(new FilterFunction<Tuple5<String, Integer, String, String, String>>() {
+                    @Override
+                    public boolean filter(Tuple5<String, Integer, String, String, String> line) throws Exception {
+
+                        Boolean flag ;
+
+                        if ("DBA".equals(line.f2) ){
+                            flag = Boolean.FALSE ;
+                        }else {
+                            flag = Boolean.TRUE ;
+                        }
+
+                        return flag;
+                    }
+                })
+                .filter(line -> "1".equals(line.f0))
+                .windowAll(TumblingProcessingTimeWindows.of(Time.days(1) , Time.hours(-8)))
+                .trigger(ContinuousProcessingTimeTrigger.of(Time.seconds(20)))
+                .reduce(new ReduceFunction<Tuple5<String, Integer, String, String , String>>() {
+                    @Override
+                    public Tuple5<String, Integer, String, String , String> reduce(Tuple5<String, Integer, String, String , String> t1, Tuple5<String, Integer, String, String , String> t2) throws Exception {
+
+                        return Tuple5.of("YUHANG_DATA_YUYUE" , t1.f1+t2.f1 , "ZHUTIYIYUAN" , t2.f3 , t2.f4) ;
+                    }
+                }) ;
+
+
+
+
+
+        DataStream appt = apptResult.connect(apptTotalResult)
+                .map(new CoMapFunction<Tuple5<String , Integer , String , String , String> , Tuple5<String , Integer , String , String , String> , String>() {
+
+                    @Override
+                    public String map1(Tuple5 value) throws Exception {
+                        setValue((Integer) value.f1) ;
+                        //"{\"medOrgCode\":\"YUHANG_DATA_YUYUE\",\"medOrgName\":\"ZHUTIYIYUAN\",\"recordDate\":\"" + value.f4 + "\",\"treatmentNum\":\"" + value.f1+ "\"}";
+                        return "{\"medOrgCode\":\"YUHANG_DATA_YUYUE\",\"medOrgName\":\"ZHUTIYIYUAN\",\"recordDate\":\"" + value.f4 + "\",\"treatmentNum\":\"" + value.f1+ "\"}" ;
+                    }
+
+                    @Override
+                    public String map2(Tuple5 value) throws Exception {
+                        int in1 = getValue() ;
+                        String formatTime = value.f4.toString().substring(0, 10).replace("-","") ;
+
+                        return "{\"dataType\":\"ads_appointment_info\",\"medOrgCode\":\"YUHANG_DATA_TOTAL\",\"medOrgName\":\"YUYUETOTAL\",\"recordDate\":\"" + formatTime + "\",\"appointmentNum\":\"" + in1 + "\",\"actualTreatmentNum\":\"" + value.f1 +"\",\"GuaHaoRQ\":\"" + value.f4 +"\"}" ;
+                    }
+                });
+
+
+
+
+
+
+        totalResult.union(appt)
+                .addSink(new FlinkKafkaProducer(kafka , "health_report_result" , new SimpleStringSchema()));
+
+
+
+
+
+        try {
+            env.execute("JiuZhenYuYue");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+
+    private static Tuple5<String, Integer, String, String , String> format(JSONObject value){
+        String yuanquid = value.getString("YUANQUID") ;
+        String zhidanren = value.getString("ZHIDANREN") ;
+        String yuyueid = value.getString("YUYUEID") ;
+        String guahaorq = value.getString("GUAHAORQ") ;
+
+
+        if(value.getString("operType").equals("I")){
+            return Tuple5.of(yuanquid , 1 , zhidanren , yuyueid , guahaorq) ;
+        } else if (value.getString("operType").equals("D")){
+            return Tuple5.of(yuanquid , -1 , zhidanren , yuyueid , guahaorq);
+        } else return Tuple5.of(yuanquid , 0 , zhidanren , yuyueid , guahaorq);
+    }
+
+    private static int getValue(){
+        return apptNum ;
+    }
+
+    private static int setValue(Integer a){
+        apptNum = a ;
+        return apptNum ;
+    }
+
+}
+
+-->
