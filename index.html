@@ -1,7 +1,7 @@
 ﻿<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
 <html xmlns="http://www.w3.org/1999/xhtml">
 <head>
-<title>比分板</title>
+<title>小秘密</title>
 <link href="css/default.css" type="text/css" rel="stylesheet">
 <script type="text/javascript" src="js/jquery.js"></script>
 <script type="text/javascript" src="js/garden.js"></script>
@@ -9,24 +9,52 @@
 
 </head>
 
+<style>/*
+	style标签内写的是css样式
+	css：就是宽高，颜色，大小，形状及一些效果，例如旋转，缩放*/
+	* {
+		/*     *即所有，清楚浏览器默认样式，一般浏览器会有内边距和外边距为8，在这里统一处理，清为0，下面可单独给每个盒子写样式*/
+		padding: 0;
+		/*padding为盒子内边距，指一个盒子内部的间距*/
+		margin: 0;
+		/*margin为盒子外边距，即一个盒子与它外部的周围的盒子之间的间距*/
+	}
+	
+	#top {
+		width: 968px;
+		height: 400px;
+		background: pink;
+	}
+	
+	#bottom {
+		width: 968px;
+		height: 400px;
+		background: green;
+	}
+	 #box{
+		   width: 200px;
+		   height: 100px;
+		   background:yellow ;
+		   text-align: center;
+		   line-height: 100px;
+		 /*position为定位，盒子可以使用定位移到页面你想移到的地方，通过top，left，bottom，right控制位置，这块你查一下*/
+		   position: absolute;
+		   top: 300px;
+		   left: 968px;
+		}
+	</style>
+
 <body>
-<p>我想在这里做一个页面</p>
-<p>在哪里都能够打开</p>
-<p>而且尽可能好看点</p>
-<p>
-<font size="10" face="Verdana" style="color:red">
-有动图那种感觉 , 不要很死板
-</font>
-</p>
-<p>
-<font size="10" face="Verdana" style="color:red">
-准备做一个pk的记录页面 , 一个屏幕分上下两部分 , 一个人一半 , 用弹幕的形式飘一些话 , 
-背景上下是不同的图片 , 然后有一个地方记录比分 , 比分的数字要是很炫酷的那种 , 
-我有以下几个问题 , 首先这种难易程度怎样
-如果实现用什么代码会比较好
-我还需要准备什么?如果网页可以带背景音乐更好
-</font>
-</p>
+	<div id="top">
+		1
+	</div>
+	<div id="bottom">
+		2
+	</div>
+	<div id="box">
+	  <button class="btn1">盒子1加分</button>
+	  <button class="btn2">盒子2加分</button>
+	</div>
 <script type="text/javascript">
 var offsetX = $("#loveHeart").width() / 2;
 var offsetY = $("#loveHeart").height() / 2 - 55;
@@ -66,5 +94,35 @@ var _bdhmProtocol = (("https:" == document.location.protocol) ? " https://" : " 
 </script>
 </div>
 </body>
+
+<script>
+    //js部分写交互动态效果
+    window.onload=function () {
+//
+        var top = document.getElementById('top') //拿到上面的盒子
+        console.log(top);
+        var bottom = document.getElementById('bottom')//拿到下面的盒子
+        console.log(bottom);
+        var topNum=top.innerHTML //上面盒子内容
+        var bottomNum=bottom.innerHTML//下面盒子内容
+
+
+        var btn1=document.getElementsByClassName('btn1')[0] //拿到右侧按钮1
+        var btn2=document.getElementsByClassName('btn2')[0]//拿到右侧按钮2
+
+        btn1.onclick=function () { //点击按钮1
+            topNum++  //原来的内容+1
+            top.innerHTML=topNum  //重新赋值
+        }
+        btn2.onclick=function () {
+            bottomNum++
+            bottom.innerHTML=bottomNum
+        }
+
+
+    }
+
+</script>
+
 </html>
 
